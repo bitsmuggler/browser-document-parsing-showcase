@@ -1,8 +1,13 @@
-import {useEffect, useRef, useState} from "react";
-import {CreateWebWorkerMLCEngine, type MLCEngineInterface, prebuiltAppConfig} from "@mlc-ai/web-llm";
+import { useEffect, useRef, useState } from "react";
+import {
+    CreateWebWorkerMLCEngine,
+    type MLCEngineInterface,
+    prebuiltAppConfig,
+    type ChatCompletionRequest,
+    type ResponseFormat
+} from "@mlc-ai/web-llm";
 import PdfTextExtractor from "./PdfExtractor.tsx";
-import { z } from "zod/v4";
-
+import { z, toJSONSchema } from "zod/v4";
 
 const selectedModel = "Llama-3.2-3B-Instruct-q4f16_1-MLC";
 
@@ -14,35 +19,21 @@ const initProgressCallback = (progress: number) => {
 
 async function initEngine() {
     const appConfig = prebuiltAppConfig;
-    // CHANGE THIS TO SEE EFFECTS OF BOTH, CODE BELOW DO NOT NEED TO CHANGE
     appConfig.useIndexedDBCache = true;
 
-    if (appConfig.useIndexedDBCache) {
-        console.log("Using IndexedDB Cache");
-    } else {
-        console.log("Using Cache API");
-    }
-
+    console.log(appConfig.useIndexedDBCache ? "Using IndexedDB Cache" : "Using Cache API");
 
     if (!engine) {
-        // engine = await CreateMLCEngine(selectedModel, {
-        //     initProgressCallback: initProgressCallback as any,
-        //     logLevel: "INFO",
-        // });
+        engine = await CreateWebWorkerMLCEngine(
+            new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }),
+            selectedModel,
+            { initProgressCallback: initProgressCallback as any, appConfig }
+        );
 
-
-        engine =
-            await CreateWebWorkerMLCEngine(
-                new Worker(new URL("./worker.ts", import.meta.url), {type: "module"}),
-                selectedModel,
-                {initProgressCallback: initProgressCallback as any, appConfig},
-            );
-
-        // Warm up the model
         const warmUp = await engine.chat.completions.create({
             messages: [
-                {role: "system", content: "You are a helpful text to json transformer."},
-                {role: "user", content: "Are you ready?"}
+                { role: "system", content: "You are a helpful text to json transformer." },
+                { role: "user", content: "Are you ready?" }
             ],
         });
 
@@ -51,32 +42,34 @@ async function initEngine() {
     return engine;
 }
 
-function App() {
+const AccountSchema = z.object({
+    balance: z.number(),
+    account_type: z.string(),
+    account_currency: z.string(),
+    interest_rate: z.string(),
+    bank_name: z.string(),
+    iban: z.string(),
+    bic_swift: z.string()
+});
 
+function App() {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<string | null>(null);
     const [elapsedTime, setElapsedTime] = useState(0);
     const [engine, setEngine] = useState<MLCEngineInterface | null>(null);
     const intervalRef = useRef<number | null>(null);
+    const [schemaType, setSchemaType] = useState<'account' | 'custom'>('account');
+    const [customSchema, setCustomSchema] = useState(`z.object({
+  name: z.string(),
+  email: z.string().email(),
+  subscribed: z.boolean()
+})`);
 
-    const AccountSchema = z.object({
-        balance: z.number(),             // Saldo
-        account_type: z.string(),        // Kontotyp
-        account_currency: z.string(),    // Kontowährung
-        interest_rate: z.string(),       // Zinssatz (can be z.number() if it's numeric)
-        bank_name: z.string(),           // Bankname
-        iban: z.string(),                // IBAN
-        bic_swift: z.string()            // BIC/SWIFT
-    });
-
-    // Init engine on app load
     useEffect(() => {
         console.log('Initializing engine...');
         initEngine()
             .then((engine) => setEngine(engine))
-            .catch((err) => {
-                console.error("Failed to init engine:", err);
-            });
+            .catch((err) => console.error("Failed to init engine:", err));
     }, []);
 
     const startStopwatch = () => {
@@ -104,38 +97,43 @@ function App() {
         setResult(null);
         startStopwatch();
 
-        try {
-            // const messages = [
-            //     {
-            //         role: "system",
-            //         content: `You are a Text to JSON transformer. Transform the following text to valid JSON.`,
-            //     },
-            //     {role: "user", content: text},
-            // ];
+        let jsonSchema;
+        if (schemaType === 'account') {
+            jsonSchema = toJSONSchema(AccountSchema);
+        } else {
+            try {
+                // ⚠️ Only safe in trusted environments
+                // eslint-disable-next-line no-eval
+                const parsedSchema = eval(customSchema);
+                jsonSchema = toJSONSchema(parsedSchema);
+            } catch (err) {
+                console.error("Invalid custom schema:", err);
+                setResult("Invalid custom schema.");
+                stopStopwatch();
+                setLoading(false);
+                return;
+            }
+        }
 
-            const request: webllm.ChatCompletionRequest = {
-                stream: false, // works with streaming, logprobs, top_logprobs as well
+        try {
+            const request: ChatCompletionRequest = {
+                stream: false,
                 messages: [
                     {
                         role: "user",
-                        content:
-                            `Generate a json from the following text: ${text}`
+                        content: `Generate a JSON from the following text:\n\n${text}`
                     },
                 ],
-                max_tokens: 128,
+                max_tokens: 256,
                 response_format: {
                     type: "json_object",
-                    schema: JSON.stringify(z.toJSONSchema(AccountSchema)),
-                } as webllm.ResponseFormat,
+                    schema: JSON.stringify(jsonSchema),
+                } as ResponseFormat,
             };
 
-            const reply0 = await engine.chatCompletion(request);
-
-            console.log('Reply 0', reply0);
-
-           // const reply = await engine!.chat.completions.create(request);
-           // const parsed = reply.choices[0].message.content;
-            setResult(await engine.getMessage());
+            await engine.chat.completions.create(request);
+            const reply = await engine.getMessage();
+            setResult(reply);
         } catch (err) {
             setResult("Error parsing document.");
             console.error(err);
@@ -146,7 +144,7 @@ function App() {
     };
 
     return (
-        <div style={{padding: "2rem", fontFamily: "sans-serif"}}>
+        <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
             <h2>PDF to Structured JSON Parser</h2>
             {!engine && <p>Loading LLM engine...</p>}
             {engine && (
@@ -154,7 +152,26 @@ function App() {
                     <p>
                         Engine ready! Model: <strong>{selectedModel}</strong>
                     </p>
-                    <PdfTextExtractor onTextExtracted={callLLM}/>
+
+                    <div style={{ marginBottom: '1rem' }}>
+                        <label><strong>Choose Schema:</strong></label>
+                        <select value={schemaType} onChange={(e) => setSchemaType(e.target.value as any)}>
+                            <option value="account">Example Account Schema</option>
+                            <option value="custom">Custom Schema</option>
+                        </select>
+                    </div>
+
+                    {schemaType === 'custom' && (
+                        <textarea
+                            placeholder="Paste your Zod schema here, e.g. z.object({ name: z.string() })"
+                            rows={6}
+                            style={{ width: '100%', fontFamily: 'monospace', marginBottom: '1rem' }}
+                            value={customSchema}
+                            onChange={(e) => setCustomSchema(e.target.value)}
+                        />
+                    )}
+
+                    <PdfTextExtractor onTextExtracted={callLLM} />
                 </>
             )}
 
@@ -171,10 +188,13 @@ function App() {
                             whiteSpace: "pre-wrap",
                             marginTop: "1rem",
                             padding: "1rem",
+                            background: "#111",
+                            color: "#0f0",
+                            borderRadius: "8px",
                         }}
                     >
-                    {result}
-                </pre>
+                        {result}
+                    </pre>
                 </>
             )}
         </div>
