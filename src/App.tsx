@@ -17,6 +17,11 @@ const initProgressCallback = (progress: number) => {
     console.log("Model loading progress:", progress);
 };
 
+// ✅ Check if WebGPU is supported
+function checkWebGPU(): boolean {
+    return !!navigator.gpu;
+}
+
 async function initEngine() {
     const appConfig = prebuiltAppConfig;
     appConfig.useIndexedDBCache = true;
@@ -57,6 +62,7 @@ function App() {
     const [result, setResult] = useState<string | null>(null);
     const [elapsedTime, setElapsedTime] = useState(0);
     const [engine, setEngine] = useState<MLCEngineInterface | null>(null);
+    const [gpuSupported, setGpuSupported] = useState(true);
     const intervalRef = useRef<number | null>(null);
     const [schemaType, setSchemaType] = useState<'account' | 'custom'>('account');
     const [customSchema, setCustomSchema] = useState(`z.object({
@@ -66,6 +72,11 @@ function App() {
 })`);
 
     useEffect(() => {
+        const supported = checkWebGPU();
+        setGpuSupported(supported);
+
+        if (!supported) return;
+
         console.log('Initializing engine...');
         initEngine()
             .then((engine) => setEngine(engine))
@@ -146,8 +157,18 @@ function App() {
     return (
         <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
             <h2>PDF to Structured JSON Parser</h2>
-            {!engine && <p>Loading LLM engine...</p>}
-            {engine && (
+
+            {!gpuSupported && (
+                <p style={{ color: 'red' }}>
+                    ❌ Your browser does not support <strong>WebGPU</strong>, which is required to run this app.
+                    <br />
+                    Please try a recent version of Chrome or Edge.
+                </p>
+            )}
+
+            {gpuSupported && !engine && <p>Loading LLM engine...</p>}
+
+            {gpuSupported && engine && (
                 <>
                     <p>
                         Engine ready! Model: <strong>{selectedModel}</strong>
