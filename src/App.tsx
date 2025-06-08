@@ -51,7 +51,7 @@ const AccountSchema = z.object({
     balance: z.number(),
     account_type: z.string(),
     account_currency: z.string(),
-    interest_rate: z.string(),
+    interest_rate_percent: z.number(),
     bank_name: z.string(),
     iban: z.string(),
     bic_swift: z.string()
