@@ -13,56 +13,18 @@ const selectedModel = "Llama-3.2-3B-Instruct-q4f16_1-MLC";
 
 let engine: MLCEngineInterface | null = null;
 
-const initProgressCallback = (progress: number) => {
-    console.log("Model loading progress:", progress);
-};
-
 // ✅ Check if WebGPU is supported
 function checkWebGPU(): boolean {
     return !!navigator.gpu;
 }
 
-async function initEngine() {
-    const appConfig = prebuiltAppConfig;
-    appConfig.useIndexedDBCache = true;
-
-    console.log(appConfig.useIndexedDBCache ? "Using IndexedDB Cache" : "Using Cache API");
-
-    if (!engine) {
-        engine = await CreateWebWorkerMLCEngine(
-            new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }),
-            selectedModel,
-            { initProgressCallback: initProgressCallback as any, appConfig }
-        );
-
-        const warmUp = await engine.chat.completions.create({
-            messages: [
-                { role: "system", content: "You are a helpful text to json transformer." },
-                { role: "user", content: "Are you ready?" }
-            ],
-        });
-
-        console.log("Warm-up response:", warmUp.choices[0].message.content);
-    }
-    return engine;
-}
-
-const AccountSchema = z.object({
-    balance: z.number(),
-    account_type: z.string(),
-    account_currency: z.string(),
-    interest_rate_percent: z.number(),
-    bank_name: z.string(),
-    iban: z.string(),
-    bic_swift: z.string()
-});
-
 function App() {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<string | null>(null);
     const [elapsedTime, setElapsedTime] = useState(0);
-    const [engine, setEngine] = useState<MLCEngineInterface | null>(null);
+    const [engineState, setEngine] = useState<MLCEngineInterface | null>(null);
     const [gpuSupported, setGpuSupported] = useState(true);
+    const [loadingProgress, setLoadingProgress] = useState("");
     const intervalRef = useRef<number | null>(null);
     const [schemaType, setSchemaType] = useState<'account' | 'custom'>('account');
     const [customSchema, setCustomSchema] = useState(`z.object({
@@ -70,6 +32,46 @@ function App() {
   email: z.string().email(),
   subscribed: z.boolean()
 })`);
+
+    const initProgressCallback = (progress: any) => {
+        console.log("Model loading progress:", progress);
+        setLoadingProgress(progress.text);
+    };
+
+    async function initEngine() {
+        const appConfig = prebuiltAppConfig;
+        appConfig.useIndexedDBCache = true;
+
+        console.log(appConfig.useIndexedDBCache ? "Using IndexedDB Cache" : "Using Cache API");
+
+        if (!engine) {
+            engine = await CreateWebWorkerMLCEngine(
+                new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }),
+                selectedModel,
+                { initProgressCallback: initProgressCallback as any, appConfig }
+            );
+
+            const warmUp = await engine.chat.completions.create({
+                messages: [
+                    { role: "system", content: "You are a helpful text to json transformer." },
+                    { role: "user", content: "Are you ready?" }
+                ],
+            });
+
+            console.log("Warm-up response:", warmUp.choices[0].message.content);
+        }
+        return engine;
+    }
+
+    const AccountSchema = z.object({
+        balance: z.number(),
+        account_type: z.string(),
+        account_currency: z.string(),
+        interest_rate_percent: z.number(),
+        bank_name: z.string(),
+        iban: z.string(),
+        bic_swift: z.string()
+    });
 
     useEffect(() => {
         const supported = checkWebGPU();
@@ -98,7 +100,7 @@ function App() {
     };
 
     const callLLM = async (text: string) => {
-        if (!engine) {
+        if (!engineState) {
             setResult("Engine not ready yet. Please wait a moment.");
             return;
         }
@@ -142,8 +144,8 @@ function App() {
                 } as ResponseFormat,
             };
 
-            await engine.chat.completions.create(request);
-            const reply = await engine.getMessage();
+            await engineState.chat.completions.create(request);
+            const reply = await engineState.getMessage();
             setResult(reply);
         } catch (err) {
             setResult("Error parsing document.");
@@ -166,12 +168,19 @@ function App() {
                 </p>
             )}
 
-            {gpuSupported && !engine && <p>Loading LLM engine...</p>}
+            {gpuSupported && !engineState && (
+                <div>
+                    <p>Loading LLM engine...</p>
+                    <div>
+                        {loadingProgress}
+                    </div>
+                </div>
+            )}
 
-            {gpuSupported && engine && (
+            {gpuSupported && engineState && (
                 <>
                     <p>
-                        Engine ready! Model: <strong>{selectedModel}</strong>
+                        ✅ Engine ready! Model: <strong>{selectedModel}</strong>
                     </p>
 
                     <div style={{ marginBottom: '1rem' }}>
