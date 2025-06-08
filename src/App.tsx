@@ -13,7 +13,7 @@ const initProgressCallback = (progress: number) => {
 async function initEngine() {
     if (!engine) {
         engine = await CreateMLCEngine(selectedModel, {
-            initProgressCallback,
+            initProgressCallback: initProgressCallback as any,
             logLevel: "INFO",
         });
 
@@ -46,7 +46,7 @@ function App() {
         const start = performance.now();
         intervalRef.current = window.setInterval(() => {
             const now = performance.now();
-            setElapsedTime(((now - start) / 1000).toFixed(1));
+            setElapsedTime(((now - start) / 1000).toFixed(1) as any);
         }, 100);
     };
 
@@ -76,7 +76,7 @@ function App() {
                 { role: "user", content: text },
             ];
 
-            const reply = await engine!.chat.completions.create({ messages });
+            const reply = await engine!.chat.completions.create({ messages: messages as any });
             const parsed = reply.choices[0].message.content;
             setResult(parsed);
         } catch (err) {
