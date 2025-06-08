@@ -15,7 +15,7 @@ let engine: MLCEngineInterface | null = null;
 
 // ✅ Check if WebGPU is supported
 function checkWebGPU(): boolean {
-    return !!navigator.gpu;
+    return !!(navigator as any).gpu;
 }
 
 function App() {
