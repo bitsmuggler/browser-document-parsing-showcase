@@ -4,7 +4,7 @@ import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
-export default function PdfTextExtractor({onTextExtracted}) {
+export default function PdfTextExtractor({onTextExtracted} : {onTextExtracted: (text: string) => void}) {
     const [text, setText] = useState('');
     const [loading, setLoading] = useState(false);
 
