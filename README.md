@@ -4,6 +4,8 @@ This project is a browser-based application that uses [WebLLM](https://webllm.ml
 
 👉🏻 Take a look at the [Live-Demo](https://browser-document-parsing-showcase.vercel.app/).
 
+👉🏻 Take a look at the comprehensive blog post: [Parsing PDFs with AI - How I Built a Zero-Trust, Client-Only PDF Parser in the Browser](https://www.workingsoftware.dev/parsing-pdf-with-ai-zero-trust-client-only/)
+
 ⚡ It runs **entirely in the browser** using WebGPU. No server or cloud connection is required for inference.
 
 ---
